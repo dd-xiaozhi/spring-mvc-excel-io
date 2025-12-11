@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: spring-mvc-excel-io
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      enabled: true
+      # 单个文件最大大小
+      max-file-size: 10MB
+      # 总上传大小限制
+      max-request-size: 50MB
+
+server:
+  port: 8080
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.chatlabs.cdev: DEBUG
