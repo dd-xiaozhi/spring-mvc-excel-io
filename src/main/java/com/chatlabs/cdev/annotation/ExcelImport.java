@@ -1,5 +1,6 @@
 package com.chatlabs.cdev.annotation;
 
+import com.chatlabs.cdev.extractor.InputStreamExtractor;
 import com.chatlabs.cdev.reader.DefaultExcelReader;
 import com.chatlabs.cdev.reader.ExcelReader;
 
@@ -40,5 +41,12 @@ public @interface ExcelImport {
      * 默认使用 DefaultExcelReader
      */
     Class<? extends ExcelReader> reader() default DefaultExcelReader.class;
+    
+    /**
+     * 自定义输入流提取器
+     * 默认为空，表示自动选择（按优先级尝试所有已注册的提取器）
+     * 可指定特定的提取器类来强制使用某种方式
+     */
+    Class<? extends InputStreamExtractor>[] extractors() default {};
 }
 

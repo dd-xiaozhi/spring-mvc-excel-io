@@ -5,17 +5,17 @@ import com.chatlabs.cdev.wrapper.ResponseWrapper;
 import org.springframework.stereotype.Component;
 
 /**
- * Response 响应包装器实现
- * 演示如何封装和解封装自定义响应类
+ * 示例响应包装器
+ * 用于处理 Response 类型的响应，自动解封装提取 data 字段
  * 
  * @author DD
  */
 @Component
-public class ResponseWrapperImpl implements ResponseWrapper {
+public class ExampleResponseWrapper implements ResponseWrapper {
     
     @Override
-    public boolean supports(Object result) {
-        return result instanceof Response;
+    public boolean supports(Class<?> clazz) {
+        return Response.class.isAssignableFrom(clazz);
     }
     
     @Override
@@ -28,12 +28,11 @@ public class ResponseWrapperImpl implements ResponseWrapper {
     
     @Override
     public Object wrap(Object data) {
-        return Response.success(data);
+        return Response.success();
     }
     
     @Override
     public int getOrder() {
-        return 100; // 优先级高于默认包装器
+        return 100;
     }
 }
-

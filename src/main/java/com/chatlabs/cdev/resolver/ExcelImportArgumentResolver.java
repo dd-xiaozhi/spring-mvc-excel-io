@@ -4,14 +4,13 @@ import com.chatlabs.cdev.annotation.ExcelImport;
 import com.chatlabs.cdev.config.ExcelIOProperties;
 import com.chatlabs.cdev.exception.ExcelIOException;
 import com.chatlabs.cdev.exception.ExcelParseException;
+import com.chatlabs.cdev.extractor.InputStreamExtractor;
 import com.chatlabs.cdev.reader.ExcelReader;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.NonNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.MethodParameter;
-import org.springframework.stereotype.Component;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -20,21 +19,22 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
- * Excel 导入参数解析器
- * 将上传的 Excel 文件自动转换为对象列表
+ * Excel导入参数解析器
+ * 支持多种输入流获取方式，可通过注解指定或自动选择
  * 
  * @author DD
  */
-@Component
+@Slf4j
 public class ExcelImportArgumentResolver implements HandlerMethodArgumentResolver {
-    
-    private static final Logger log = LoggerFactory.getLogger(ExcelImportArgumentResolver.class);
     
     private final ApplicationContext applicationContext;
     private final ExcelIOProperties properties;
+    private List<InputStreamExtractor> extractors;
     
     public ExcelImportArgumentResolver(ApplicationContext applicationContext, ExcelIOProperties properties) {
         this.applicationContext = applicationContext;
@@ -51,114 +51,103 @@ public class ExcelImportArgumentResolver implements HandlerMethodArgumentResolve
                                   ModelAndViewContainer mavContainer,
                                   @NonNull NativeWebRequest webRequest,
                                   WebDataBinderFactory binderFactory) {
-        
         ExcelImport annotation = parameter.getParameterAnnotation(ExcelImport.class);
-        if (annotation == null) {
-            return null;
-        }
+        if (annotation == null) return null;
         
         HttpServletRequest request = webRequest.getNativeRequest(HttpServletRequest.class);
-        if (request == null) {
-            throw new ExcelIOException("无法获取 HttpServletRequest");
-        }
+        if (request == null) throw new ExcelIOException("无法获取HttpServletRequest");
         
         try {
-            log.debug("开始解析 Excel 参数: fieldName={}, dataClass={}", 
-                    annotation.value(), annotation.dataClass().getSimpleName());
-            
             // 获取输入流
-            InputStream inputStream = getInputStream(request, annotation, parameter);
-            
+            InputStream inputStream = extractInputStream(request, annotation);
             if (inputStream == null) {
                 if (annotation.required()) {
-                    throw new ExcelParseException("未找到上传文件: " + annotation.value());
+                    throw new ExcelParseException("未找到文件: " + annotation.value());
                 }
-                log.debug("文件不存在且非必需，返回 null");
                 return null;
             }
             
             // 检查文件大小
-            if (properties != null && request.getContentLength() > properties.getMaxFileSize()) {
-                throw new ExcelParseException(String.format(
-                        "上传文件大小超出限制: %d bytes > %d bytes", 
-                        request.getContentLength(), properties.getMaxFileSize()));
+            if (request.getContentLength() > properties.getMaxFileSize()) {
+                throw new ExcelParseException("文件超出限制: " + properties.getMaxFileSize() + " bytes");
             }
             
             // 根据参数类型处理
             Class<?> paramType = parameter.getParameterType();
-            
-            // 如果参数就是 MultipartFile/InputStream/byte[]，直接返回
             if (MultipartFile.class.isAssignableFrom(paramType)) {
                 return getMultipartFile(request, annotation.value());
             }
-            
             if (InputStream.class.isAssignableFrom(paramType)) {
                 return inputStream;
             }
-            
             if (byte[].class.isAssignableFrom(paramType)) {
                 return inputStream.readAllBytes();
             }
             
-            // 否则，解析为对象列表
-            ExcelReader reader = getReader(annotation);
+            // 解析为对象列表
+            ExcelReader reader = applicationContext.getBean(annotation.reader());
             List<?> result = reader.read(inputStream, annotation.dataClass());
-            
-            log.debug("Excel 参数解析完成: dataSize={}", result.size());
+            log.debug("解析完成: {}条", result.size());
             return result;
-            
         } catch (ExcelIOException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Excel 参数解析失败: paramType={}, annotationValue={}", 
-                    parameter.getParameterType().getSimpleName(), annotation.value(), e);
-            throw new ExcelParseException("Excel 参数解析失败", e);
+            throw new ExcelParseException("解析失败", e);
         }
     }
     
     /**
-     * 获取输入流
+     * 提取输入流
+     * 优先使用注解指定的提取器，否则自动选择
      */
-    private InputStream getInputStream(HttpServletRequest request, 
-                                       ExcelImport annotation,
-                                       MethodParameter parameter) throws Exception {
+    private InputStream extractInputStream(HttpServletRequest request, ExcelImport annotation) throws Exception {
+        String fieldName = annotation.value();
+        Class<? extends InputStreamExtractor>[] specifiedExtractors = annotation.extractors();
         
-        // 支持 multipart/form-data
-        if (request instanceof MultipartHttpServletRequest multipartRequest) {
-            MultipartFile file = multipartRequest.getFile(annotation.value());
-            if (file != null && !file.isEmpty()) {
-                return file.getInputStream();
+        // 如果注解指定了提取器，只使用指定的
+        if (specifiedExtractors.length > 0) {
+            for (Class<? extends InputStreamExtractor> extractorClass : specifiedExtractors) {
+                InputStreamExtractor extractor = applicationContext.getBean(extractorClass);
+                if (extractor.supports(request, fieldName)) {
+                    InputStream is = extractor.extract(request, fieldName);
+                    if (is != null) {
+                        log.debug("使用指定提取器: {}", extractorClass.getSimpleName());
+                        return is;
+                    }
+                }
+            }
+            return null;
+        }
+        
+        // 自动选择：按优先级尝试所有已注册的提取器
+        List<InputStreamExtractor> allExtractors = getAllExtractors();
+        for (InputStreamExtractor extractor : allExtractors) {
+            if (extractor.supports(request, fieldName)) {
+                InputStream is = extractor.extract(request, fieldName);
+                if (is != null) {
+                    log.debug("自动选择提取器: {}", extractor.getClass().getSimpleName());
+                    return is;
+                }
             }
         }
         
-        // 支持直接从请求体读取（如二进制上传）
-        if (request.getContentLength() > 0) {
-            return request.getInputStream();
-        }
-        
         return null;
     }
     
     /**
-     * 获取 MultipartFile
+     * 获取所有已注册的提取器，按优先级排序
      */
+    private List<InputStreamExtractor> getAllExtractors() {
+        if (extractors == null) {
+            extractors = new ArrayList<>(applicationContext.getBeansOfType(InputStreamExtractor.class).values());
+            extractors.sort(Comparator.comparingInt(InputStreamExtractor::getOrder));
+            log.debug("已注册{}个输入流提取器", extractors.size());
+        }
+        return extractors;
+    }
+    
     private MultipartFile getMultipartFile(HttpServletRequest request, String fieldName) {
-        if (request instanceof MultipartHttpServletRequest multipartRequest) {
-            return multipartRequest.getFile(fieldName);
-        }
-        return null;
-    }
-    
-    /**
-     * 获取读取器实例
-     */
-    private ExcelReader getReader(ExcelImport annotation) {
-        try {
-            return applicationContext.getBean(annotation.reader());
-        } catch (Exception e) {
-            log.error("获取 Excel 读取器失败，将使用默认读取器", e);
-            throw new ExcelIOException("获取 Excel 读取器失败", e);
-        }
+        return request instanceof MultipartHttpServletRequest multipartRequest 
+                ? multipartRequest.getFile(fieldName) : null;
     }
 }
-

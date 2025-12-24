@@ -1,17 +1,13 @@
 package com.chatlabs.cdev.config;
 
 import com.chatlabs.cdev.annotation.ExcelExport;
-import com.chatlabs.cdev.handler.ExcelExportHandler;
 import jakarta.annotation.Resource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Controller;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
@@ -25,17 +21,13 @@ import java.util.Map;
  * 
  * @author DD
  */
+@Slf4j
 @Component
 public class ExcelExportMappingConfiguration implements InitializingBean {
     
-    private static final Logger log = LoggerFactory.getLogger(ExcelExportMappingConfiguration.class);
-    
-    @Resource
-    private ApplicationContext applicationContext;
-    
     @Resource
     private RequestMappingHandlerMapping requestMappingHandlerMapping;
-    
+
     @Override
     public void afterPropertiesSet() {
         registerExportMappings();

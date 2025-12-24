@@ -2,6 +2,7 @@ package com.chatlabs.cdev.example.controller;
 
 import com.chatlabs.cdev.annotation.ExcelExport;
 import com.chatlabs.cdev.annotation.ExcelImport;
+import com.chatlabs.cdev.example.dto.Response;
 import com.chatlabs.cdev.example.dto.UserDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -170,6 +171,53 @@ public class ExcelExampleController {
         
         log.info("查询筛选用户，最小年龄 {}，共 {} 条数据", minAge, users.size());
         return users;
+    }
+    
+    /**
+     * 示例 6：包装响应导出
+     * 访问：GET /example/users/wrapped - 返回 JSON（Response 包装）
+     * 访问：GET /example/users/wrapped/export - 导出 Excel
+     * <p>
+     * 返回 Response 包装的数据，导出时会自动解封装提取 data 字段
+     * 需要配合 ExampleResponseWrapper 使用
+     */
+    @GetMapping("/users/wrapped")
+    @ExcelExport(
+        fileName = "包装响应用户",
+        sheetName = "用户数据",
+        dataClass = UserDTO.class
+    )
+    public Response<List<UserDTO>> listUsersWrapped() {
+        List<UserDTO> users = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) {
+            UserDTO user = new UserDTO();
+            user.setId((long) i);
+            user.setUsername(   "wrapped_user" + i);
+            user.setEmail("wrapped" + i + "@example.com");
+            user.setAge(30 + i);
+            user.setCreateTime(LocalDateTime.now());
+            users.add(user);
+        }
+        
+        log.info("查询用户列表（包装响应），共 {} 条数据", users.size());
+        // 返回 Response 包装的数据，导出时 ExampleResponseWrapper 会自动解封装
+        return Response.success(users);
+    }
+    
+    /**
+     * 示例 7：包装响应导入
+     * 访问：POST /example/users/import/wrapped
+     * Content-Type: multipart/form-data
+     * <p>
+     * 导入后返回 Response 包装的结果
+     */
+    @PostMapping("/users/import/wrapped")
+    public Response<String> importUsersWrapped(@ExcelImport(value = "file", dataClass = UserDTO.class) List<UserDTO> users) {
+        log.info("导入用户列表（包装响应），共 {} 条数据", users.size());
+        
+        users.forEach(user -> log.debug("导入用户: {}", user));
+        
+        return Response.success("成功导入 " + users.size() + " 条用户数据");
     }
 }
 

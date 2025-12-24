@@ -7,14 +7,14 @@ package com.chatlabs.cdev.wrapper;
  * @author DD
  */
 public interface ResponseWrapper {
-    
+
     /**
-     * 判断是否支持该类型
-     * 
-     * @param result 响应对象
+     * 判断包装器是否支持指定类
+     *
+     * @param clazz 类
      * @return 是否支持
      */
-    boolean supports(Object result);
+    boolean supports(Class<?> clazz);
     
     /**
      * 从包装对象中提取实际数据（解封装）
